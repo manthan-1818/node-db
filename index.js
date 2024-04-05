@@ -1,13 +1,19 @@
 const express = require("express");
 const mongoose = require("mongoose");
-const DemoModel = require("./Schema/schema");
-const upload = require("./multerConfig"); // Import Multer configuration
+const DemoModel = require("./Schema/user");
 require("./Connections/db");
+const upload = require('./config/multerConfig'); // Corrected file path
+const Image = require('./Schema/image');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(express.json());
+
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
 
 // GET route to retrieve data
 app.get("/", async (req, res) => {
@@ -19,26 +25,32 @@ app.get("/", async (req, res) => {
   }
 });
 
-// POST route to add a new user with file upload
-app.post("/add", upload.single('avatar'), async (req, res) => {
+// POST route to add a new user
+app.post("/add", async (req, res) => {
   try {
+    console.log(req.body); 
     const { name, email } = req.body;
-    const avatar = req.file.path; // Get the path of the uploaded file
-    const newUser = new DemoModel({ name, email, avatar });
+
+    // Check if name and email are provided
+    if (!name || !email) {
+      return res.status(400).json({ error: "Name and email are required" });
+    }
+
+    const newUser = new DemoModel({ name, email });
     await newUser.save();
     res.redirect("/");
   } catch (error) {
-    res.status(400).send("Error adding user");
+    console.error("Add user error:", error.message);
+    res.status(400).send(error.message);
   }
 });
+
 
 // PATCH route to update data
 app.patch("/update/:id", async (req, res) => {
   try {
     const id = req.params.id;
-
     const updatedData = req.body;
-
     const updatedUser = await DemoModel.findByIdAndUpdate(id, updatedData, {
       new: true,
     });
@@ -68,6 +80,31 @@ app.delete("/delete/:id", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+// Upload file 
+app.post('/', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // Save the file to the upload folder
+    const filePath = `uploads/${req.file.originalname}`;
+    fs.writeFileSync(filePath, req.file.buffer);
+
+    // Create a new image document
+    const image = new Image({
+      filename: req.file.originalname,
+      contentType: req.file.mimetype,
+      path: filePath, // Save the file path in the database
+      image: req.file.buffer // Save the binary data in the database
+    });
+
+    // Save the image data to the database
+    await image.save();
+
+    res.status(201).json({ message: 'Image uploaded successfully', image });
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
